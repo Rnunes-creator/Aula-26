@@ -1,5 +1,5 @@
 import mysql.connector              #Driver oficial do MYSQL para Python
-import pandas  as pandas            #Manipulação
+import pandas  as pd            #Manipulação
 import matplotlib.pyplot as plt
 from mysql.connector import Error
 
@@ -57,7 +57,6 @@ notas = [
     (7, 5, 7.0, '2026-06-30'), (7, 6, 6.0, '2026-06-30'),
     (9, 5, 8.5, '2026-06-30'), (9, 6, 9.5, '2026-06-30'),
 ]
-
 try:
     #------------------------------------------------
     # 1) Conexão com o banco "escola" do XAMPP
@@ -73,11 +72,59 @@ try:
         print("Conectado com sucesso!")
 
         cursor = conexao.cursor()
+    # INSERT IGNORE: se o registro já existir (campos UNIQUE), o MySQL
+    # pula a linha em vez de dar erro. Assim dá para rodar o script
+    # mais de uma vez sem duplicar nada.
+        inserts = [
+            ("cursos",
+             "INSERT IGNORE INTO cursos (nome_curso, carga_horaria, turno) "
+             "VALUES (%s, %s, %s)",
+             cursos,),
+            ("alunos",
+             "INSERT IGNORE INTO alunos "
+             "(nome, cpf, data_nascimento, email, telefone, data_matricula, id_curso)"
+             "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+             alunos,),
+            ("disciplinas",
+             "INSERT IGNORE INTO disciplinas (nome_disciplina, carga_horaria, id_curso)"
+             "VALUES (%s, %s, %s)",
+             disciplinas,),
+            ("notas",
+             "INSERT IGNORE INTO notas (id_aluno, id_disciplina, nota, data_avaliacao)"
+             "VALUES (%s, %s, %s, %s)",
+             notas,),
+        ]
+#EXECUTA na ordem: pai antges da filha
+        for tabela, sql, valores in inserts:
+            cursor.executemany(sql, valores) #varios INSETEs de uma vez
+            conexao.commit()                 #sem commit() nada é gravado
+            print(f"(tabela): (cursor.rowcount) linha(s)inserida(s)")
+#disciplina, com o nome do curso
+            
+        consulta = """
+        SELECT a.id_aluno, a.nome, c.nome_curso, c.turno,
+              d.nome_disciplina, n.nota, n.data_avaliacao
+        FROM notas n
+        INNER JOIN alunos     a ON n.id_aluno      = a.id_aluno
+        INNER JOIN disciplinas d ON n.id_disciplina = d.id_disciplina
+        INNER JOIN cursos     c ON a.id_curso      = c.id_curso
+        ORDER BY c.nome_curso, a. nome, d.nome_disciplina
+        """
+        cursor.execute(consulta)
 
+#fetchall() traz as linhas; cursor.column_names traz nomes das colunas
+        df = pd.DataFrame(cursor.fetchall(), columns=cursor.column_names)
+
+# O MYSQL devolve DECIMAL como objeto Decimal: converte para o numero
+        df["nota"] = df["nota"].astype(float)
+        print("\nDataFrame (notas + alunos + disciplinas + cursos):")
+        print(df)
+
+#Salva em csv ("utf-8-sig" faz o Ecel abrir os acentos corretamente)
+        df.to_csv("notas_alunos.csv", index=False, encoding="utf-8-sig")
+        print("\nArquivo notas_alunos.csv gerado!")
 except Error as e:
-    print(f"Erro ao conectar ou executar: (e)")
-
-
+    print(f"Erro ao conectar ou executar: {e}")
 finally:
     if 'cursor' in locals():
         try: 
@@ -87,5 +134,3 @@ finally:
         if 'conexao' in locals() and conexao.is_connected():
             conexao.close()
             print('conexão encerrada.')
-
-
